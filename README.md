@@ -1,6 +1,6 @@
-# QuaterNet
+# nn-comparison
 
-**QuaterNet** is a research project aimed at comparing the performance of neural networks using different data representations and optimization algorithms. Specifically, this project focuses on:
+**nn-comparison** is a research project aimed at comparing the performance of neural networks using different data representations and optimization algorithms. Specifically, this project focuses on:
 
 - **Real Neural Networks**: Standard neural networks operating with real numbers.
 - **Quaternion Neural Networks**: Networks that leverage quaternions to represent and process multidimensional data.
