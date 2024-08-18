@@ -1,13 +1,13 @@
 import os
+import shutil
+import numpy as np
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
 
-def split_csv_by_sensor(input_file):
+def split_csv_by_sensor(input_file: str) -> None:
     """
     Splits a CSV file by sensor ID and sensor type.
-
-    This function reads a CSV file, filters the data by unique sensor IDs and sensor types,
-    and then writes separate CSV files for each combination of sensor ID and sensor type.
     The output files are saved in a 'processed' directory relative to the input file's location.
 
     Parameters:
@@ -44,6 +44,86 @@ def split_csv_by_sensor(input_file):
             print(f"File saved: {new_filename}")
 
 
+def split_data() -> None:
+    """
+    Splits the CSV files in the 'processed' directory into training (70%), validation (15%), and test (15%) sets,
+    and moves them into corresponding subdirectories. Also shuffles the files within each directory.
+
+    Returns:
+    None
+    """
+    base_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../data/processed")
+    )
+    if not os.path.exists(base_dir):
+        raise FileNotFoundError(f"Directory {base_dir} does not exist.")
+
+    train_dir = os.path.join(base_dir, "train")
+    test_dir = os.path.join(base_dir, "test")
+    valid_dir = os.path.join(base_dir, "valid")
+
+    os.makedirs(train_dir, exist_ok=True)
+    os.makedirs(test_dir, exist_ok=True)
+    os.makedirs(valid_dir, exist_ok=True)
+
+    files = [f for f in os.listdir(base_dir) if f.endswith(".csv")]
+    if not files:
+        raise FileNotFoundError(f"Directory {base_dir} empty.")
+
+    data = []
+
+    for f in files:
+        if "_ADL" in f:
+            label = "ADL"
+        elif "_Fall" in f:
+            label = "Fall"
+        else:
+            continue
+        data.append({"filename": f, "label": label})
+
+    print(f"Number of files collected: {len(data)}")
+
+    df = pd.DataFrame(data)
+
+    X = df[["filename"]]
+    y = df["label"]
+
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X, y, train_size=0.7, stratify=y, random_state=42
+    )
+    X_valid, X_test, y_valid, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
+    )
+
+    train_df = X_train.copy()
+    train_df["label"] = y_train
+    valid_df = X_valid.copy()
+    valid_df["label"] = y_valid
+    test_df = X_test.copy()
+    test_df["label"] = y_test
+
+    move_files(train_df, base_dir, train_dir)
+    move_files(valid_df, base_dir, valid_dir)
+    move_files(test_df, base_dir, test_dir)
+
+
+def move_files(df: pd.DataFrame, base_dir: str, destination_dir: str) -> None:
+    """
+    Moves files listed in the DataFrame to the specified destination directory.
+
+    Parameters:
+    df (pd.DataFrame): DataFrame containing filenames to be moved.
+    destination_dir (str): The path to the directory where the files should be moved.
+
+    Returns:
+    None
+    """
+    for _, row in df.iterrows():
+        src = os.path.join(base_dir, row["filename"])
+        dest = os.path.join(destination_dir, row["filename"])
+        shutil.move(src, dest)
+
+
 if __name__ == "__main__":
     input_directory = "../../data/raw"
 
@@ -51,3 +131,4 @@ if __name__ == "__main__":
         if filename.endswith(".csv"):
             input_file = os.path.join(input_directory, filename)
             split_csv_by_sensor(input_file)
+    split_data()
