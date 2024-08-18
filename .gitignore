@@ -1,0 +1,3 @@
+data/*
+!data/README.md
+tests/dataset_tests/__pycache__/
