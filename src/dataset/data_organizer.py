@@ -1,8 +1,11 @@
 import os
 import shutil
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from time import sleep
+from progress.bar import Bar
 
 
 def split_csv_by_sensor(input_file: str) -> None:
@@ -41,7 +44,6 @@ def split_csv_by_sensor(input_file: str) -> None:
             output_path = os.path.join(output_dir, new_filename)
 
             df_filtered.to_csv(output_path, index=False, sep=";")
-            print(f"File saved: {new_filename}")
 
 
 def split_data() -> None:
@@ -52,11 +54,7 @@ def split_data() -> None:
     Returns:
     None
     """
-    base_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "../../data/processed")
-    )
-    if not os.path.exists(base_dir):
-        raise FileNotFoundError(f"Directory {base_dir} does not exist.")
+    base_dir = "../../data/processed"
 
     train_dir = os.path.join(base_dir, "train")
     test_dir = os.path.join(base_dir, "test")
@@ -81,18 +79,27 @@ def split_data() -> None:
             continue
         data.append({"filename": f, "label": label})
 
-    print(f"Number of files collected: {len(data)}")
-
     df = pd.DataFrame(data)
+    # df = df.sample(frac=1).reset_index(drop=True)  # uncomment for shuffle, data processed will be different
 
     X = df[["filename"]]
     y = df["label"]
 
     X_train, X_temp, y_train, y_temp = train_test_split(
-        X, y, train_size=0.7, stratify=y, random_state=42
+        X,
+        y,
+        train_size=0.7,
+        stratify=y,
+        shuffle=True,
+        random_state=42,
     )
     X_valid, X_test, y_valid, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
+        X_temp,
+        y_temp,
+        test_size=0.5,
+        stratify=y_temp,
+        shuffle=True,
+        random_state=42,
     )
 
     train_df = X_train.copy()
@@ -125,10 +132,32 @@ def move_files(df: pd.DataFrame, base_dir: str, destination_dir: str) -> None:
 
 
 if __name__ == "__main__":
-    input_directory = "../../data/raw"
+    raw_directory = "../../data/raw"
+    processed_directory = "../../data/processed"
 
-    for filename in os.listdir(input_directory):
-        if filename.endswith(".csv"):
-            input_file = os.path.join(input_directory, filename)
-            split_csv_by_sensor(input_file)
-    split_data()
+    if os.path.exists(processed_directory):
+        print("Warning: The 'processed' directory already exist.")
+        print("Running this script again will overwrite the existing files.")
+        user_input = input("Do you want to proceed? (y to continue): ")
+        if user_input.lower() != "y":
+            print("Operation cancelled.")
+            sys.exit()
+        shutil.rmtree(processed_directory)
+
+    total_files = len(
+        [
+            filename
+            for filename in os.listdir(raw_directory)
+            if filename.endswith(".csv")
+        ]
+    )
+
+    with Bar(
+        "Processing", fill="#", suffix="%(percent).1f%% - %(eta)ds", max=total_files
+    ) as bar:
+        for filename in os.listdir(raw_directory):
+            if filename.endswith(".csv"):
+                input_file = os.path.join(raw_directory, filename)
+                split_csv_by_sensor(input_file)
+                bar.next()
+        split_data()
