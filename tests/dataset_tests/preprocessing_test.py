@@ -7,7 +7,7 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../src"))
 )
 
-from dataset import data_organizer
+from dataset import preprocessing
 
 
 def test_split_csv_by_sensor(mocker) -> None:
@@ -31,7 +31,7 @@ def test_split_csv_by_sensor(mocker) -> None:
     mocker.patch("os.path.join", side_effect=lambda *args: "/".join(args))
 
     input_file = "data/raw/mock_data.csv"
-    data_organizer.split_csv_by_sensor(input_file)
+    preprocessing.split_csv_by_sensor(input_file)
 
     mock_read_csv.assert_called_once_with(input_file, skiprows=40, delimiter=";")
 

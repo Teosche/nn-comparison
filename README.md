@@ -25,7 +25,7 @@ The dataset should be downloaded at: *link in progress*
 Unzip the file and replace 'data' directory.
 For re-process the raw data launch:
 ```bash
-python3 data_organizer.py
+python3 preprocessing.py
 ```
 
 ## License
