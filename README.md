@@ -12,11 +12,21 @@ The primary goal of this project is to demonstrate that quaternion neural networ
 
 ## Project Structure
 
+- **data/**: Directory for dataset. Should be contain 'processed' and 'raw' directories.
 - **src/**: Contains the source code for different network implementations and utilities.
 - **models/**: Stores trained models for the different networks.
 - **logs/**: Holds log files generated during training and evaluation.
 - **scripts/**: Shell scripts for automating training and evaluation processes.
 - **tests/**: Unit tests to ensure code reliability.
+
+## Dataset
+
+The dataset should be downloaded at: *link in progress*
+Unzip the file and replace 'data' directory.
+For re-process the raw data launch:
+```bash
+python3 preprocessing.py
+```
 
 ## License
 

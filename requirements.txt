@@ -1,0 +1,5 @@
+numpy==2.1.0
+pandas==2.2.2
+progress==1.6
+pytest==8.2.0
+scikit_learn==1.5.1
