@@ -1,183 +1,131 @@
 import os
-import shutil
-import sys
-import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from time import sleep
 from progress.bar import Bar
 
 
-def split_csv_by_sensor(input_file: str) -> None:
+def process_file(input_file: str) -> pd.DataFrame:
     """
-    Splits a CSV file by sensor ID and sensor type.
-    The output files are saved in a 'processed' directory relative to the input file's location.
+    Processes a CSV file by reading its contents, filtering out specific sensor data,
+    and returning a DataFrame.
 
-    Parameters:
-    input_file (str): The path to the input CSV file to be processed.
+    Args:
+        input_file (str): The path to the input CSV file.
 
     Returns:
-    None
+        pd.DataFrame: A DataFrame containing the filtered data.
     """
-    processed_dir = "../../data/processed"
-    os.makedirs(processed_dir, exist_ok=True)
+    try:
+        df = pd.read_csv(input_file, skiprows=40, delimiter=";")
+        df = df.iloc[:, :-1]
+        df_filtered = df[(df[" Sensor ID"] != 0) & (df[" Sensor Type"] != 2)]
 
-    df = pd.read_csv(input_file, skiprows=40, delimiter=";")
-
-    df = df.iloc[:, :-1]
-
-    base_filename = os.path.basename(input_file).replace(".csv", "")
-    base_filename = "_".join(base_filename.split("_")[:6])
-
-    parts = base_filename.split("_")
-    parts[-1] = parts[-1].zfill(2)
-
-    base_filename = "_".join(parts)
-
-    for sensor_id in df[" Sensor ID"].unique():
-        for sensor_type in df[" Sensor Type"].unique():
-            df_filtered = df[
-                (df[" Sensor ID"] == sensor_id) & (df[" Sensor Type"] == sensor_type)
-            ]
-
-            if df_filtered.empty:
-                continue
-
-            df_filtered = downsampling_and_padding(df_filtered)
-            df_filtered["% TimeStamp"] = df_filtered["% TimeStamp"].astype(int)
-            df_filtered[" Sensor Type"] = df_filtered[" Sensor Type"].astype(int)
-            df_filtered[" Sensor ID"] = df_filtered[" Sensor ID"].astype(int)
-
-            new_filename = f"{base_filename}_{str(sensor_type).zfill(2)}_{str(sensor_id).zfill(2)}.csv"
-            output_path = os.path.join(processed_dir, new_filename)
-            df_filtered.to_csv(output_path, index=False, sep=";")
+        return df_filtered
+    except Exception as e:
+        print(f"Error processing file {input_file}: {e}")
+        return pd.DataFrame()
 
 
-def split_data() -> None:
+def rename_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Splits the CSV files in the 'processed' directory into training (70%), validation (15%), and test (15%) sets,
-    and moves them into corresponding subdirectories. Also shuffles the files within each directory.
+    Renames the columns of the DataFrame to standard names.
+
+    Args:
+        df (pd.DataFrame): The DataFrame with original column names.
 
     Returns:
-    None
+        pd.DataFrame: The DataFrame with renamed columns.
     """
-    base_dir = "../../data/processed"
-
-    # da fare refactor
-    train_dir = os.path.join(base_dir, "train")
-    test_dir = os.path.join(base_dir, "test")
-    valid_dir = os.path.join(base_dir, "valid")
-
-    os.makedirs(train_dir, exist_ok=True)
-    os.makedirs(test_dir, exist_ok=True)
-    os.makedirs(valid_dir, exist_ok=True)
-
-    files = [f for f in os.listdir(base_dir) if f.endswith(".csv")]
-    if not files:
-        raise FileNotFoundError(f"Directory {base_dir} empty.")
-
-    data = []
-
-    for f in files:
-        if "_ADL" in f:
-            label = "ADL"
-        elif "_Fall" in f:
-            label = "Fall"
-        else:
-            continue
-        data.append({"filename": f, "label": label})
-
-    df = pd.DataFrame(data)
-
-    X = df[["filename"]]
-    y = df["label"]
-
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        X,
-        y,
-        train_size=0.7,
-        stratify=y,
-        shuffle=True,
-        random_state=42,
-    )
-    X_valid, X_test, y_valid, y_test = train_test_split(
-        X_temp,
-        y_temp,
-        test_size=0.5,
-        stratify=y_temp,
-        shuffle=True,
-        random_state=42,
-    )
-
-    train_df = X_train.copy()
-    train_df["label"] = y_train
-    valid_df = X_valid.copy()
-    valid_df["label"] = y_valid
-    test_df = X_test.copy()
-    test_df["label"] = y_test
-
-    move_files(train_df, base_dir, train_dir)
-    move_files(valid_df, base_dir, valid_dir)
-    move_files(test_df, base_dir, test_dir)
-
-
-def downsampling_and_padding(df: pd.DataFrame) -> pd.DataFrame:
-    if len(df) > 2000:
-        df = df.iloc[::10, :]
-
-    if len(df) >= 300:
-        df = df.iloc[:300, :]
-    elif len(df) < 300:
-        num_needed = 300 - len(df)
-        augmented_df = augment_empty_data(df.iloc[-1], num_augmentations=num_needed)
-        df = pd.concat([df, augmented_df], ignore_index=True)
-
+    df.columns = [
+        "timestamp",
+        "sample",
+        "x-axis",
+        "y-axis",
+        "z-axis",
+        "sensor_type",
+        "sensor_id",
+    ]
     return df
 
 
-def augment_empty_data(row, num_augmentations=1):
-    augmented_rows = []
-    for _ in range(num_augmentations):
-        jittered = row.copy()
-        jittered[" X-Axis"] += np.random.normal(0, 0.05)
-        jittered[" Y-Axis"] += np.random.normal(0, 0.05)
-        jittered[" Z-Axis"] += np.random.normal(0, 0.05)
-        augmented_rows.append(jittered)
-    return pd.DataFrame(augmented_rows)
-
-
-def move_files(df: pd.DataFrame, base_dir: str, destination_dir: str) -> None:
+def generate_new_filename(file: str) -> str:
     """
-    Moves files listed in the DataFrame to the specified destination directory.
+    Generates a new filename based on the original filename, adjusting for specific activities.
 
-    Parameters:
-    df (pd.DataFrame): DataFrame containing filenames to be moved.
-    destination_dir (str): The path to the directory where the files should be moved.
+    Args:
+        file (str): The original filename.
 
     Returns:
-    None
+        str: The new filename formatted as per the specified rules.
     """
-    for _, row in df.iterrows():
-        src = os.path.join(base_dir, row["filename"])
-        dest = os.path.join(destination_dir, row["filename"])
-        shutil.move(src, dest)
+    base_filename = os.path.basename(file).replace(".csv", "")
+    parts = base_filename.split("_")
+
+    if "LyingDown_OnABed" in base_filename:
+        activity = "LyingDownOnABed"
+        sub_activity = parts[5]
+        subject = f"sub{parts[2].zfill(2)}"
+        exp_n = f"exp{parts[6].zfill(2)}"
+    elif "Sitting_GettingUpOnAChair" in base_filename:
+        activity = "SittingGettingUpOnAChair"
+        sub_activity = parts[5]
+        subject = f"sub{parts[2].zfill(2)}"
+        exp_n = f"exp{parts[6].zfill(2)}"
+    else:
+        activity = parts[3]
+        sub_activity = parts[4]
+        subject = f"sub{parts[2].zfill(2)}"
+        exp_n = f"exp{parts[5].zfill(2)}"
+
+    return f"{activity}_{sub_activity}_{subject}_{exp_n}.csv"
+
+
+def save_csv(df: pd.DataFrame, output_path: str, input_file: str) -> None:
+    """
+    Saves the processed DataFrame as a CSV file.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to save.
+        output_path (str): The path where the CSV file will be saved.
+        input_file (str): The path of the input file for reference in error messages.
+    """
+    try:
+        df.to_csv(output_path, index=False)
+    except Exception as e:
+        print(f"Error saving file {output_path}: {e}")
+
+
+def generate_csv(input_directory: str, output_dir: str) -> None:
+    """
+    Generates processed CSV files from all CSV files in the input directory.
+
+    Args:
+        input_directory (str): The path to the directory containing input CSV files.
+        output_dir (str): The path to the directory where processed CSV files will be saved.
+    """
+    files = [f for f in os.listdir(input_directory) if f.endswith(".csv")]
+    raw_len = len(files)
+
+    with Bar(
+        "Processing", fill="#", suffix="%(percent).1f%% - %(eta)ds", max=raw_len
+    ) as bar:
+        for file in files:
+            input_file = os.path.join(input_directory, file)
+            df_filtered = process_file(input_file)
+
+            df_filtered = rename_columns(df_filtered)
+            new_filename = generate_new_filename(file)
+            new_file_path = os.path.join(output_dir, new_filename)
+            save_csv(df_filtered, new_file_path, input_file)
+
+            bar.next()
+
+    print(f"Generated files: {len(os.listdir(output_dir))}/{raw_len}")
 
 
 if __name__ == "__main__":
-    raw_directory = "../../data/raw"
-    processed_directory = "../../data/processed"
+    raw_dir = "../../data/raw"
+    processed_dir = "../../data/processed"
 
-    if os.path.exists(processed_directory):
-        shutil.rmtree(processed_directory)
+    os.makedirs(processed_dir, exist_ok=True)
 
-    total_files = len([f for f in os.listdir(raw_directory)])
-
-    with Bar(
-        "Processing", fill="#", suffix="%(percent).1f%% - %(eta)ds", max=total_files
-    ) as bar:
-        for filename in os.listdir(raw_directory):
-            if filename.endswith(".csv"):
-                input_file = os.path.join(raw_directory, filename)
-                split_csv_by_sensor(input_file)
-                bar.next()
-        split_data()
+    generate_csv(raw_dir, processed_dir)
