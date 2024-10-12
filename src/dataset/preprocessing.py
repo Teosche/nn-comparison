@@ -1,5 +1,8 @@
+from asyncio import sleep
 import os
+import shutil
 import pandas as pd
+from sklearn.model_selection import train_test_split
 from progress.bar import Bar
 
 
@@ -61,13 +64,13 @@ def generate_new_filename(file: str) -> str:
     parts = base_filename.split("_")
 
     if "LyingDown_OnABed" in base_filename:
-        activity = "LyingDownOnABed"
-        sub_activity = parts[5]
+        activity = "ADL"
+        sub_activity = "LyingDownOnABed"
         subject = f"sub{parts[2].zfill(2)}"
         exp_n = f"exp{parts[6].zfill(2)}"
     elif "Sitting_GettingUpOnAChair" in base_filename:
-        activity = "SittingGettingUpOnAChair"
-        sub_activity = parts[5]
+        activity = "ADL"
+        sub_activity = "SittingGettingUpOnAChair"
         subject = f"sub{parts[2].zfill(2)}"
         exp_n = f"exp{parts[6].zfill(2)}"
     else:
@@ -111,7 +114,6 @@ def generate_csv(input_directory: str, output_dir: str) -> None:
         for file in files:
             input_file = os.path.join(input_directory, file)
             df_filtered = process_file(input_file)
-
             df_filtered = rename_columns(df_filtered)
             new_filename = generate_new_filename(file)
             new_file_path = os.path.join(output_dir, new_filename)
@@ -122,10 +124,149 @@ def generate_csv(input_directory: str, output_dir: str) -> None:
     print(f"Generated files: {len(os.listdir(output_dir))}/{raw_len}")
 
 
+def generate_dataframe(input_data: list[str]) -> pd.DataFrame:
+    data = []
+
+    for f in input_data:
+        if "ADL_" in f:
+            label = "ADL"
+        elif "Fall_" in f:
+            label = "Fall"
+        else:
+            continue
+        data.append({"filename": f, "label": label})
+
+    df = pd.DataFrame(data)
+
+    # Aggiungi un controllo diagnostico
+    if df.empty:
+        raise ValueError("Il DataFrame generato è vuoto. Controlla i file di input.")
+
+    return df
+
+
+def get_csv_files(source_dir: str) -> list[str]:
+    """
+    Retrieves all CSV files from the source directory.
+
+    Parameters:
+    source_dir (str): The directory where the CSV files are located.
+
+    Returns:
+    list: List of CSV file names.
+    """
+    files = [f for f in os.listdir(source_dir) if f.endswith(".csv")]
+    if not files:
+        raise FileNotFoundError(f"Error: Directory {source_dir} is empty.")
+
+    return files
+
+
+def train_valid_test_split(df: pd.DataFrame) -> dict:
+    """
+    Splits the DataFrame into train, validation, and test sets.
+
+    Parameters:
+    df (pd.DataFrame): DataFrame containing filenames and labels.
+
+    Returns:
+    dict: Dictionary containing DataFrames for train, valid, and test sets.
+    """
+    X = df[["filename"]]
+    y = df["label"]
+
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X, y, train_size=0.7, stratify=y, shuffle=True, random_state=42
+    )
+    X_valid, X_test, y_valid, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.5, stratify=y_temp, shuffle=True, random_state=42
+    )
+
+    train_df = X_train.copy()
+    train_df["label"] = y_train
+    valid_df = X_valid.copy()
+    valid_df["label"] = y_valid
+    test_df = X_test.copy()
+    test_df["label"] = y_test
+
+    return {"train": train_df, "valid": valid_df, "test": test_df}
+
+
+def copy_files_to_split_dirs(
+    file_splits: dict, source_dir: str, split_dirs: dict
+) -> None:
+    """
+    Copy files to their corresponding train, validation, and test directories.
+
+    Parameters:
+    file_splits (dict): Dictionary containing DataFrames with filenames for each split (train, valid, test).
+    source_dir (str): Directory where the files are located.
+    split_dirs (dict): Dictionary with directories for each split (train, valid, test).
+
+    Returns:
+    None
+    """
+    for split, df in file_splits.items():
+        split_dir = split_dirs[split]
+        for _, row in df.iterrows():
+            src_file = os.path.join(source_dir, row["filename"])
+            dst_file = os.path.join(split_dir, row["filename"])
+            shutil.copy(src_file, dst_file)
+
+
+def generate_dirs(base_dir: str, dataset_type: str) -> dict:
+    """
+    Generates training, validation, and test directories for the given dataset type.
+
+    Parameters:
+    base_dir (str): Base directory where the directories will be created.
+    dataset_type (str): Type of the dataset (e.g., 'real', 'quaternion').
+
+    Returns:
+    dict: Dictionary containing paths for train, valid, and test directories.
+    """
+    dataset_dir = os.path.join(base_dir, dataset_type)
+    train_dir = os.path.join(dataset_dir, "train")
+    test_dir = os.path.join(dataset_dir, "test")
+    valid_dir = os.path.join(dataset_dir, "valid")
+
+    if os.path.exists(dataset_dir):
+        shutil.rmtree(dataset_dir)
+
+    for dir_path in [train_dir, test_dir, valid_dir]:
+        os.makedirs(dir_path, exist_ok=True)
+
+    return {"train": train_dir, "valid": valid_dir, "test": test_dir}
+
+
+def split_data(source_dir: str, destination_dir: str, dataset_type: str) -> None:
+    """
+    Splits the CSV files in the 'processed' directory into training (70%), validation (15%), and test (15%) sets,
+    and moves them into corresponding subdirectories. Also shuffles the files within each directory.
+
+    Returns:
+    None
+    """
+
+    split_dirs = generate_dirs(destination_dir, dataset_type)
+    files = get_csv_files(source_dir)
+    df = generate_dataframe(files)
+    file_splits = train_valid_test_split(df)
+    copy_files_to_split_dirs(file_splits, source_dir, split_dirs)
+
+
 if __name__ == "__main__":
+    data_dir = "../../data"
     raw_dir = "../../data/raw"
     processed_dir = "../../data/processed"
 
+    if os.path.exists(processed_dir):
+        shutil.rmtree(processed_dir)
     os.makedirs(processed_dir, exist_ok=True)
 
     generate_csv(raw_dir, processed_dir)
+    # generate_quaternions_data
+
+    split_data(processed_dir, data_dir, "real_dataset")
+
+    # split_data(quaternions_dir, quaternions_dataset_dir)
