@@ -1,12 +1,14 @@
 from asyncio import sleep
 import os
 import shutil
+import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from ahrs.filters import Madgwick
 from progress.bar import Bar
 
 
-def process_file(input_file: str) -> pd.DataFrame:
+def make_processed_df(input_file: str) -> pd.DataFrame:
     """
     Processes a CSV file by reading its contents, filtering out specific sensor data,
     and returning a DataFrame.
@@ -82,7 +84,7 @@ def generate_new_filename(file: str) -> str:
     return f"{activity}_{sub_activity}_{subject}_{exp_n}.csv"
 
 
-def save_csv(df: pd.DataFrame, output_path: str, input_file: str) -> None:
+def save_csv(df: pd.DataFrame, output_path: str) -> None:
     """
     Saves the processed DataFrame as a CSV file.
 
@@ -97,7 +99,7 @@ def save_csv(df: pd.DataFrame, output_path: str, input_file: str) -> None:
         print(f"Error saving file {output_path}: {e}")
 
 
-def generate_csv(input_directory: str, output_dir: str) -> None:
+def generate_csv(input_dir: str, output_dir: str) -> None:
     """
     Generates processed CSV files from all CSV files in the input directory.
 
@@ -105,23 +107,29 @@ def generate_csv(input_directory: str, output_dir: str) -> None:
         input_directory (str): The path to the directory containing input CSV files.
         output_dir (str): The path to the directory where processed CSV files will be saved.
     """
-    files = [f for f in os.listdir(input_directory) if f.endswith(".csv")]
+    files = [f for f in os.listdir(input_dir) if f.endswith(".csv")]
     raw_len = len(files)
 
     with Bar(
-        "Processing", fill="#", suffix="%(percent).1f%% - %(eta)ds", max=raw_len
+        "Processing raw data",
+        fill="#",
+        suffix="%(percent).1f%% - %(eta)ds",
+        max=raw_len,
     ) as bar:
         for file in files:
-            input_file = os.path.join(input_directory, file)
-            df_filtered = process_file(input_file)
-            df_filtered = rename_columns(df_filtered)
-            new_filename = generate_new_filename(file)
-            new_file_path = os.path.join(output_dir, new_filename)
-            save_csv(df_filtered, new_file_path, input_file)
-
+            process_raw_file(file, input_dir, output_dir)
             bar.next()
 
     print(f"Generated files: {len(os.listdir(output_dir))}/{raw_len}")
+
+
+def process_raw_file(file, input_dir, output_dir) -> None:
+    input_file = os.path.join(input_dir, file)
+    processed_df = make_processed_df(input_file)
+    df_filtered = rename_columns(processed_df)
+    new_filename = generate_new_filename(file)
+    new_file_path = os.path.join(output_dir, new_filename)
+    save_csv(df_filtered, new_file_path)
 
 
 def generate_dataframe(input_data: list[str]) -> pd.DataFrame:
@@ -137,10 +145,6 @@ def generate_dataframe(input_data: list[str]) -> pd.DataFrame:
         data.append({"filename": f, "label": label})
 
     df = pd.DataFrame(data)
-
-    # Aggiungi un controllo diagnostico
-    if df.empty:
-        raise ValueError("Il DataFrame generato è vuoto. Controlla i file di input.")
 
     return df
 
@@ -255,18 +259,144 @@ def split_data(source_dir: str, destination_dir: str, dataset_type: str) -> None
     copy_files_to_split_dirs(file_splits, source_dir, split_dirs)
 
 
+def generate_quaternions_data(input_dir, output_dir):
+    expected_sensor_ids = [1, 2, 3, 4]
+
+    files = [f for f in os.listdir(input_dir) if f.endswith(".csv")]
+    processed_len = len(files)
+
+    with Bar(
+        "Forging quaternions",
+        fill="#",
+        suffix="%(percent).1f%% - %(eta)ds",
+        max=processed_len,
+    ) as bar:
+        for file in files:
+            process_single_file(file, input_dir, output_dir, expected_sensor_ids)
+            bar.next()
+
+
+def process_single_file(file, input_dir, output_dir, expected_sensor_ids):
+    """ """
+    input_file = os.path.join(input_dir, file)
+    output_file = os.path.join(output_dir, file)
+
+    data = load_and_preprocess_data(input_file)
+
+    quaternion_data = generate_quaternions_for_sensors(data, expected_sensor_ids)
+
+    save_csv(quaternion_data, output_file)
+
+
+def load_and_preprocess_data(input_file):
+    """ """
+    data = pd.read_csv(input_file)
+    acc_data = data[data["sensor_type"] == 0]
+    gyro_data = data[data["sensor_type"] == 1]
+    present_sensor_ids = data["sensor_id"].unique()
+    return {
+        "acc_data": acc_data,
+        "gyro_data": gyro_data,
+        "present_sensor_ids": present_sensor_ids,
+    }
+
+
+def generate_quaternions_for_sensors(data, expected_sensor_ids):
+    """ """
+    quaternion_data = []
+
+    acc_data = data["acc_data"]
+    gyro_data = data["gyro_data"]
+    present_sensor_ids = data["present_sensor_ids"]
+
+    for sensor_id in expected_sensor_ids:
+        if sensor_id in present_sensor_ids:
+            acc_sensor_data = acc_data[acc_data["sensor_id"] == sensor_id]
+            gyro_sensor_data = gyro_data[gyro_data["sensor_id"] == sensor_id]
+
+            acc_sensor_data, gyro_sensor_data = sync_samples(
+                acc_sensor_data, gyro_sensor_data
+            )
+
+            if not acc_sensor_data.empty and not gyro_sensor_data.empty:
+                quaternion_df = make_quaternion_df(
+                    acc_sensor_data, gyro_sensor_data, sensor_id
+                )
+                quaternion_data.append(quaternion_df)
+        else:
+            missing_data = make_missing_data(sensor_id)
+            quaternion_data.append(missing_data)
+
+    concatenated_quaternion_data = pd.concat(quaternion_data, ignore_index=True)
+
+    concatenated_quaternion_data = concatenated_quaternion_data[
+        ["sample", "timestamp", "q0", "q1", "q2", "q3", "sensor_id"]
+    ]
+    return concatenated_quaternion_data
+
+
+def sync_samples(acc_sensor_data, gyro_sensor_data):
+    """ """
+    common_samples = np.intersect1d(
+        acc_sensor_data["sample"].values, gyro_sensor_data["sample"].values
+    )
+    acc_sensor_data = acc_sensor_data[acc_sensor_data["sample"].isin(common_samples)]
+    gyro_sensor_data = gyro_sensor_data[gyro_sensor_data["sample"].isin(common_samples)]
+    return acc_sensor_data, gyro_sensor_data
+
+
+def make_quaternion_df(
+    acc_sensor_data: pd.DataFrame, gyro_sensor_data: pd.DataFrame, sensor_id: int
+) -> pd.DataFrame:
+    """ """
+    madgwick = Madgwick(
+        gyr=gyro_sensor_data[["x-axis", "y-axis", "z-axis"]].values,
+        acc=acc_sensor_data[["x-axis", "y-axis", "z-axis"]].values,
+    )
+    quaternions = madgwick.Q
+
+    quaternion_df = pd.DataFrame(quaternions, columns=["q0", "q1", "q2", "q3"])
+    quaternion_df["timestamp"] = (
+        acc_sensor_data["timestamp"].astype(int).values[: len(quaternion_df)]
+    )
+    quaternion_df["sample"] = (
+        acc_sensor_data["sample"].astype(int).values[: len(quaternion_df)]
+    )
+    quaternion_df["sensor_id"] = sensor_id
+
+    return quaternion_df
+
+
+def make_missing_data(sensor_id: int) -> pd.DataFrame:
+    """ """
+    missing_data = pd.DataFrame(
+        np.nan, index=range(300), columns=["q0", "q1", "q2", "q3"]
+    )
+    missing_data["timestamp"] = np.nan
+    missing_data["sample"] = np.nan
+    missing_data["sensor_id"] = sensor_id
+
+    return missing_data
+
+
+def remake_dir(dir: str) -> None:
+    if os.path.exists(dir):
+        shutil.rmtree(dir)
+    os.makedirs(dir, exist_ok=True)
+
+
 if __name__ == "__main__":
     data_dir = "../../data"
     raw_dir = "../../data/raw"
     processed_dir = "../../data/processed"
+    quaternions_dir = "../../data/quaternion"
 
-    if os.path.exists(processed_dir):
-        shutil.rmtree(processed_dir)
-    os.makedirs(processed_dir, exist_ok=True)
+    remake_dir(processed_dir)
+    remake_dir(quaternions_dir)
 
     generate_csv(raw_dir, processed_dir)
-    # generate_quaternions_data
+
+    generate_quaternions_data(processed_dir, quaternions_dir)
 
     split_data(processed_dir, data_dir, "real_dataset")
-
-    # split_data(quaternions_dir, quaternions_dataset_dir)
+    split_data(quaternions_dir, data_dir, "quaternions_dataset")
