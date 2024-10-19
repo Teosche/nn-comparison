@@ -127,6 +127,7 @@ def process_raw_file(file, input_dir, output_dir) -> None:
     input_file = os.path.join(input_dir, file)
     processed_df = make_processed_df(input_file)
     df_filtered = rename_columns(processed_df)
+    df_filtered = preprocess_sensor_data(df_filtered)
     new_filename = generate_new_filename(file)
     new_file_path = os.path.join(output_dir, new_filename)
     save_csv(df_filtered, new_file_path)
@@ -377,6 +378,69 @@ def make_missing_data(sensor_id: int) -> pd.DataFrame:
     missing_data["sensor_id"] = sensor_id
 
     return missing_data
+
+
+def adjust_sample(df: pd.DataFrame) -> pd.DataFrame:
+    """Adjust the 'sample' column so that each group starts from 0."""
+    df["sample"] = df.groupby(["sensor_id", "sensor_type"])["sample"].transform(
+        lambda x: x - x.min()
+    )
+    return df
+
+
+def downsampling_and_padding(df: pd.DataFrame, sensor_id, sensor_type) -> pd.DataFrame:
+    df = df.sort_values(by="sample").reset_index(drop=True)
+
+    num_samples = len(df)
+
+    if num_samples > 300:
+        df = df.iloc[:300].copy()
+    elif num_samples < 300:
+        num_needed = 300 - num_samples
+        augmented_df = augment_empty_data(
+            df.iloc[-1], num_augmentations=num_needed, start_sample=num_samples
+        )
+        df = pd.concat([df, augmented_df], ignore_index=True)
+
+    df["sample"] = range(300)
+    return df
+
+
+def augment_empty_data(row, num_augmentations=1, start_sample=0):
+    """
+    Function that creates fake samples for padding.
+    Adds a 'sample' column starting from 'start_sample'.
+    """
+    augmented_rows = []
+    for i in range(num_augmentations):
+        jittered = row.copy()
+        jittered["x-axis"] += np.random.normal(0, 0.05)
+        jittered["y-axis"] += np.random.normal(0, 0.05)
+        jittered["z-axis"] += np.random.normal(0, 0.05)
+        jittered["sample"] = start_sample + i
+        augmented_rows.append(jittered)
+
+    return pd.DataFrame(augmented_rows)
+
+
+def preprocess_sensor_data(df: pd.DataFrame):
+    """
+    Main function that processes the data for each sensor_id and sensor_type.
+    """
+    df = adjust_sample(df)
+
+    processed_dfs = []
+    for (sensor_id, sensor_type), group in df.groupby(["sensor_id", "sensor_type"]):
+        processed_df = downsampling_and_padding(group, sensor_id, sensor_type)
+        processed_dfs.append(processed_df)
+
+    result_df = pd.concat(processed_dfs, ignore_index=True)
+
+    result_df["timestamp"] = result_df["timestamp"].astype(int)
+    result_df["sensor_id"] = result_df["sensor_id"].astype(int)
+    result_df["sensor_type"] = result_df["sensor_type"].astype(int)
+
+    return result_df
 
 
 def remake_dir(dir: str) -> None:
