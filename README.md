@@ -1,26 +1,37 @@
 # nn-comparison
 
-**nn-comparison** is a research project aimed at comparing the performance of neural networks using different data representations and optimization algorithms. Specifically, this project focuses on:
+**nn-comparison** is a thesis research project comparing the performance of LSTM (Long Short-Term Memory) and QLSTM (Quaternion Long Short-Term Memory) networks on human activity recognition (HAR) tasks. The project focuses on:
 
-- **Real Neural Networks**: Standard neural networks operating with real numbers.
-- **Quaternion Neural Networks**: Networks that leverage quaternions to represent and process multidimensional data.
-- **Levenberg-Marquardt Optimized Quaternion Networks**: Quaternion networks that utilize the Levenberg-Marquardt algorithm to potentially accelerate training and improve convergence.
+- **LSTM Networks**: Standard real-valued neural networks used for sequential data.
+- **QLSTM Networks**: Neural networks leveraging quaternions for improved spatial representation and efficiency.
 
-The dataset used for these studies is a dataset of falls and daily activities, derived from the "UMAFall: A Multisensor Dataset for the Research on Automatic Fall Detection" study. This dataset includes movement traces acquired through systematic emulation of predefined Activities of Daily Life (ADLs) and falls. Details of the study are cited below.
-
+- **Sensor Fusion**: Quaternion data is generated using the **Madgwick Filter** to fuse accelerometer and gyroscope measurements.
 
 ## Objectives
 
-The primary goal of this project is to demonstrate that quaternion neural networks, when combined with the Levenberg-Marquardt optimization algorithm, can outperform both standard real-valued networks and quaternion networks using standard backpropagation in terms of training speed and accuracy.
+The primary goal is to analyze and compare the accuracy and training efficiency of LSTM and QLSTM networks for human activity recognition using a sensor-based HAR dataset. Special emphasis is placed on:
+
+- Evaluating the computational efficiency of QLSTM networks.
+- Understanding the advantages of quaternion-based representations in modeling spatial rotations.
+- Demonstrating potential improvements in accuracy and training time reduction.
 
 ## Project Structure
 
-- **data/**: Directory for dataset. Should be contain 'processed' and 'raw' directories.
-- **src/**: Contains the source code for different network implementations and utilities.
-- **models/**: Stores trained models for the different networks.
-- **logs/**: Holds log files generated during training and evaluation.
-- **scripts/**: Shell scripts for automating training and evaluation processes.
-- **tests/**: Unit tests to ensure code reliability.
+- **data/**: Directory containing raw and processed dataset.
+- **src/**: Implementation of LSTM and QLSTM networks, along with utilities.
+
+## Dataset
+
+The dataset used in this study is derived from the **UMAFall** dataset, containing motion data captured via inertial sensors (accelerometers and gyroscopes). It includes recordings of **daily activities** and **fall events**.
+
+
+
+### Data Setup:
+1. Download the dataset from [Dropbox](https://www.dropbox.com/scl/fo/apjuwq4n4i9e8k2b5fnh8/AL1iRBcakCLoR6JbkT14ZtI?rlkey=8ihd7tkkryk5w01lukjk73uv1&st=g5va5kdg&dl=0).
+2. Extract the files and replace the `data` directory in the project.
+3. Re-process the raw data using the following command:
+   ```bash
+   python3 src/dataset/preprocessing.py
 
 ## Dataset
 
@@ -30,6 +41,24 @@ For re-process the raw data launch:
 ```bash
 python3 nn-comparison/src/dataset/preprocessing.py
 ```
+
+## Training the Models
+
+### LSTM
+
+```bash
+python3 nn-comparison/src/lstm/train.py
+```
+
+### QLSTM
+
+```bash
+python3 nn-comparison/src/qlstm/train.py
+```
+
+## Results Overview
+
+While the QLSTM achieved a slightly lower accuracy than the LSTM, its performance remains promising due to significantly reduced training time and its ability to generalize well with fewer data points. This demonstrates the potential of QLSTM for efficient deployment in resource-constrained environments, such as microcontrollers.
 
 ## Citation
 
@@ -41,7 +70,7 @@ Volume 110,
 Pages 32-39,
 ISSN 1877-0509,
 https://doi.org/10.1016/j.procs.2017.06.110.
-(https://www.sciencedirect.com/science/article/pii/S1877050917312899)
+https://www.sciencedirect.com/science/article/pii/S1877050917312899
 
 ## License
 
