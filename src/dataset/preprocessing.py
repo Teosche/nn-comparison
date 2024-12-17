@@ -324,9 +324,9 @@ def generate_quaternions_for_sensors(data, expected_sensor_ids):
                     acc_sensor_data, gyro_sensor_data, sensor_id
                 )
                 quaternion_data.append(quaternion_df)
-        else:
-            missing_data = make_missing_data(sensor_id)
-            quaternion_data.append(missing_data)
+        # else:
+        #     missing_data = make_missing_data(sensor_id)
+        #     quaternion_data.append(missing_data)
 
     concatenated_quaternion_data = pd.concat(quaternion_data, ignore_index=True)
 
@@ -368,16 +368,16 @@ def make_quaternion_df(
     return quaternion_df
 
 
-def make_missing_data(sensor_id: int) -> pd.DataFrame:
-    """ """
-    missing_data = pd.DataFrame(
-        np.nan, index=range(300), columns=["q0", "q1", "q2", "q3"]
-    )
-    missing_data["timestamp"] = np.nan
-    missing_data["sample"] = np.nan
-    missing_data["sensor_id"] = sensor_id
+# def make_missing_data(sensor_id: int) -> pd.DataFrame:
+#     """ """
+#     missing_data = pd.DataFrame(
+#         np.nan, index=range(300), columns=["q0", "q1", "q2", "q3"]
+#     )
+#     missing_data["timestamp"] = np.nan
+#     missing_data["sample"] = np.nan
+#     missing_data["sensor_id"] = sensor_id
 
-    return missing_data
+#     return missing_data
 
 
 def adjust_sample(df: pd.DataFrame) -> pd.DataFrame:
